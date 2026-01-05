@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Doraemon - Pro Edition</title>
+    <style>
+        :root {
+            --primary: #4CAF50;
+            --secondary: #2196F3;
+            --danger: #ff4d4d;
+            --glass: rgba(255, 255, 255, 0.15);
+            --glass-dark: rgba(0, 0, 0, 0.85);
+        }
+
+        body {
+            margin: 0; padding: 0; display: flex; justify-content: center; align-items: center;
+            height: 100vh; background-color: #0f172a; font-family: 'Segoe UI', sans-serif;
+            overflow: hidden; touch-action: manipulation;
+        }
+        
+        #game-container {
+            position: relative; width: 100%; max-width: 850px; height: 100%; max-height: 480px;
+            overflow: hidden; background-color: #000; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+        }
+
+        #game-container:fullscreen { max-width: none; max-height: none; width: 100vw; height: 100vh; }
+        
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; display: block; }
+        
+        .background-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-size: cover; background-position: center; background-repeat: repeat-x;
+        }
+        
+        #background-layer-1 { z-index: 3; background-image: url('https://i.ibb.co/NgmzVBW1/Cartoon-Platform-Landscape-with-Greenery.png'); }
+        #background-layer-2 { z-index: 2; background-image: url('https://i.ibb.co/SDC0T4mR/Chat-GPT-Image-Jun-2-2025-11-05-32-PM.png'); }
+        #background-layer-3 { z-index: 1; background-image: url('https://i.ibb.co/2YP8rv7J/Gentle-Cloudscape-in-Blue-Sky.png'); }
+        
+        #score-display {
+            position: absolute; top: 20px; right: 20px; font-size: 28px; font-weight: 800;
+            color: white; z-index: 10; background: var(--glass); padding: 5px 20px;
+            border-radius: 50px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #shoot-btn {
+            position: absolute; bottom: 30px; right: 30px; width: 85px; height: 85px;
+            background: rgba(255, 77, 77, 0.8); border: 4px solid white; border-radius: 50%;
+            z-index: 15; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 900; font-size: 14px; box-shadow: 0 0 25px rgba(255, 77, 77, 0.5);
+            user-select: none; transition: transform 0.1s;
+        }
+        #shoot-btn:active { transform: scale(0.85); }
+        #cooldown-overlay {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
+            background: rgba(0,0,0,0.6); border-radius: 50%; transition: height 0.1s linear;
+        }
+        
+        #start-screen, #game-over {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; background-color: var(--glass-dark);
+            backdrop-filter: blur(12px); z-index: 20; color: white; text-align: center;
+        }
+
+        .ui-card {
+            background: rgba(255, 255, 255, 0.05); padding: 40px; border-radius: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1); width: 85%; max-width: 320px;
+        }
+        
+        button.menu-btn {
+            width: 100%; padding: 18px; font-size: 18px; font-weight: bold;
+            color: white; border: none; border-radius: 15px; cursor: pointer;
+            transition: all 0.2s; margin: 12px 0; text-transform: uppercase;
+        }
+        
+        #start-btn { background: var(--primary); }
+        #fullscreen-btn { background: var(--secondary); }
+        #restart-btn { background: var(--primary); }
+        
+        h2 { letter-spacing: 5px; color: #2196F3; font-size: 28px; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="background-layer-3" class="background-layer"></div>
+        <div id="background-layer-2" class="background-layer"></div>
+        <div id="background-layer-1" class="background-layer"></div>
+        
+        <canvas id="game-canvas"></canvas>
+        <div id="score-display">0</div>
+        
+        <div id="shoot-btn">
+            <span>SHOOT</span>
+            <div id="cooldown-overlay"></div>
+        </div>
+        
+        <div id="start-screen">
+            <div class="ui-card">
+                <h2>FLAPPY DORAEMON</h2>
+                <p style="font-size: 14px; opacity: 0.8; margin-bottom: 25px;">TAP to fly • BUTTON to shoot</p>
+                <button id="start-btn" class="menu-btn">Start Game</button>
+                <button id="fullscreen-btn" class="menu-btn">Fullscreen</button>
+            </div>
+        </div>
+        
+        <div id="game-over" style="display: none;">
+            <div class="ui-card">
+                <h1 style="color: var(--danger); font-size: 36px;">CRASHED!</h1>
+                <p>Score: <span id="final-score" style="font-weight:bold; color:var(--primary); font-size: 24px;">0</span></p>
+                <p style="font-size:14px; margin-bottom:25px; opacity:0.6">High Score: <span id="high-score">0</span></p>
+                <button id="restart-btn" class="menu-btn">Try Again</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const gameOverScreen = document.getElementById('game-over');
+        const startScreen = document.getElementById('start-screen');
+        const startBtn = document.getElementById('start-btn');
+        const shootBtnUI = document.getElementById('shoot-btn');
+        const cooldownOverlay = document.getElementById('cooldown-overlay');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const gameContainer = document.getElementById('game-container');
+        const bgLayers = [
+            document.getElementById('background-layer-1'),
+            document.getElementById('background-layer-2')
+        ];
+
+        // --- UPDATED SOUND SYSTEM ---
+        const sounds = {
+            // Background music remains the same
+            bgMusic: new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'),
+            // Jump sound
+            jump: new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'),
+            // Shoot sound
+            shoot: new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'),
+            // NEW: Gentler Crash sound (removed the siren audio)
+            crash: new Audio('dash.wav')
+        };
+        
+        sounds.bgMusic.loop = true;
+        sounds.bgMusic.volume = 0.3;
+
+        function playSound(audio) {
+            audio.currentTime = 0;
+            audio.play().catch(e => console.log("Sound interaction required"));
+        }
+
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = gameContainer.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            canvas.logicalWidth = rect.width;
+            canvas.logicalHeight = rect.height;
+            if (!gameRunning) player.y = canvas.logicalHeight / 2;
+        }
+
+        const BASE_ENEMY_SPEED = 3.2;
+        const SHOOT_COOLDOWN = 1500;
+
+        let player = { 
+            x: 80, y: 0, width: 85, height: 68, 
+            velocity: 0, gravity: 0.28, jump: -6.5 
+        };
+        
+        let enemies = [], clouds = [], bullets = [], score = 0;
+        let gameRunning = false, lastShootTime = 0;
+        let animationId, gameStartTime = 0, lastEnemySpawnTime = 0;
+        let landScroll = 0;
+
+        const images = {
+            player: new Image(), enemyBird: new Image(), plane1: new Image(), plane2: new Image(), cloud: new Image()
+        };
+        images.player.src = 'https://i.ibb.co/Wvyyxnyj/file-000000003ba072098c9aa8223875529c.png';
+        images.enemyBird.src = 'https://i.ibb.co/fV2GbB87/Chat-GPT-Image-Jun-1-2025-09-53-38-AM.png';
+        images.plane1.src = 'https://i.ibb.co/QvwYnDT4/Cartoon-Airplane-in-Bold-Colours.png';
+        images.plane2.src = 'https://i.ibb.co/GQzNK10B/Chat-GPT-Image-Jun-1-2025-10-00-38-AM.png';
+        images.cloud.src = 'https://i.ibb.co/DPHjwLQQ/Chat-GPT-Image-Jun-1-2025-09-53-42-AM.png';
+
+        function setupEventListeners() {
+            window.addEventListener('resize', resizeCanvas);
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' || e.key === 'ArrowUp') handleJump();
+                if (e.key.toLowerCase() === 's' || e.code === 'ShiftLeft') handleShoot();
+            });
+            canvas.addEventListener('mousedown', (e) => { if(e.button === 0) handleJump(); });
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleJump(); });
+            
+            shootBtnUI.addEventListener('touchstart', (e) => { e.preventDefault(); handleShoot(); });
+            shootBtnUI.addEventListener('mousedown', (e) => { e.stopPropagation(); handleShoot(); });
+            
+            startBtn.onclick = startGame;
+            document.getElementById('restart-btn').onclick = () => { startGame(); };
+            fullscreenBtn.onclick = () => gameContainer.requestFullscreen().then(resizeCanvas);
+        }
+
+        function startGame() {
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            score = 0; enemies = []; bullets = [];
+            player.y = canvas.logicalHeight / 2; player.velocity = 0;
+            gameRunning = true; gameStartTime = Date.now();
+            
+            // Cleanly play only the background music at start
+            sounds.bgMusic.currentTime = 0;
+            sounds.bgMusic.play().catch(e => console.log("Audio play failed"));
+            
+            resizeCanvas(); gameLoop();
+        }
+
+        function handleJump() { 
+            if (gameRunning) {
+                player.velocity = player.jump;
+                playSound(sounds.jump); // Play jump sound on tap
+            }
+        }
+
+        function handleShoot() {
+            const now = Date.now();
+            if (!gameRunning || now - lastShootTime < SHOOT_COOLDOWN) return;
+            
+            playSound(sounds.shoot); // Play shoot sound on air cannon fire
+            player.velocity += 0.4;
+
+            bullets.push({ 
+                x: player.x + player.width + 20, 
+                y: player.y + player.height/2 + 22, 
+                width: 35, height: 25, speed: 18 
+            });
+            
+            lastShootTime = now;
+            updateCooldownUI();
+        }
+
+        function updateCooldownUI() {
+            let elapsed = 0;
+            const interval = setInterval(() => {
+                elapsed = Date.now() - lastShootTime;
+                const percent = Math.max(0, 100 - (elapsed / SHOOT_COOLDOWN * 100));
+                cooldownOverlay.style.height = percent + "%";
+                if (elapsed >= SHOOT_COOLDOWN) {
+                    clearInterval(interval);
+                    cooldownOverlay.style.height = "0%";
+                }
+            }, 50);
+        }
+
+        function createEnemy() {
+            const mult = 1 + (score * 0.0035);
+            const speed = (BASE_ENEMY_SPEED + Math.min(5, score/25)) * mult;
+            const type = score > 20 && Math.random() > 0.65 ? (Math.random() > 0.5 ? 'p1' : 'p2') : 'bird';
+            
+            enemies.push({
+                x: canvas.logicalWidth,
+                y: Math.random() * (canvas.logicalHeight - 80) + 10,
+                width: type === 'bird' ? 55 : 95,
+                height: type === 'bird' ? 55 : 60,
+                speed: speed + (type === 'bird' ? 0 : 3.5),
+                type: type,
+                falling: false,
+                rotation: 0
+            });
+        }
+
+        function update() {
+            if (!gameRunning) return;
+            player.velocity += player.gravity;
+            player.y += player.velocity;
+            
+            if (player.y + player.height > canvas.logicalHeight) { player.y = canvas.logicalHeight - player.height; endGame(); }
+            if (player.y < 0) { player.y = 0; player.velocity = 0.5; }
+
+            const now = Date.now();
+            if (now - lastEnemySpawnTime > 1700) { createEnemy(); lastEnemySpawnTime = now; }
+
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                const oldX = b.x;
+                b.x += b.speed;
+                
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const e = enemies[j];
+                    if (!e.falling) {
+                        const yMatch = b.y > e.y && b.y < e.y + e.height;
+                        const xMatch = (b.x > e.x && b.x < e.x + e.width) || (oldX < e.x + e.width && b.x > e.x);
+                        if (yMatch && xMatch) {
+                            e.falling = true;
+                            bullets.splice(i, 1);
+                            break; 
+                        }
+                    }
+                }
+                if (bullets[i] && bullets[i].x > canvas.logicalWidth) bullets.splice(i, 1);
+            }
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let e = enemies[i];
+                if (e.falling) {
+                    e.y += 10; e.x -= 2; e.rotation += 0.25;
+                } else {
+                    e.x -= e.speed;
+                    if (checkCollision(player, e)) endGame();
+                }
+                if (e.x + e.width < -100 || e.y > canvas.logicalHeight) enemies.splice(i, 1);
+            }
+
+            landScroll += 1.8 + (score * 0.012);
+            bgLayers[0].style.backgroundPosition = `${-landScroll}px bottom`;
+            bgLayers[1].style.backgroundPosition = `${-landScroll*0.4}px bottom`;
+            score = Math.floor((now - gameStartTime) / 500);
+            scoreDisplay.textContent = score;
+        }
+
+        function checkCollision(a, b) {
+            const pad = 10; 
+            return a.x + pad < b.x + b.width - pad && 
+                   a.x + a.width - pad > b.x + pad && 
+                   a.y + pad < b.y + b.height - pad && 
+                   a.y + a.height - pad > b.y + pad;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.logicalWidth, canvas.logicalHeight);
+            
+            ctx.fillStyle = "rgba(180, 220, 255, 0.6)";
+            ctx.shadowBlur = 10; ctx.shadowColor = "white";
+            for (let b of bullets) {
+                ctx.beginPath();
+                ctx.ellipse(b.x - 10, b.y, b.width, b.height/2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "rgba(255,255,255,0.8)";
+                ctx.stroke();
+            }
+            ctx.shadowBlur = 0;
+
+            ctx.drawImage(images.player, player.x, player.y, player.width, player.height);
+
+            for (let e of enemies) {
+                ctx.save();
+                ctx.translate(e.x + e.width/2, e.y + e.height/2);
+                ctx.rotate(e.rotation);
+                let img = e.type === 'bird' ? images.enemyBird : (e.type === 'p1' ? images.plane1 : images.plane2);
+                ctx.drawImage(img, -e.width/2, -e.height/2, e.width, e.height);
+                ctx.restore();
+            }
+        }
+
+        function endGame() {
+            gameRunning = false;
+            sounds.bgMusic.pause();
+            playSound(sounds.crash); // Play the gentler crash sound
+            
+            document.getElementById('final-score').textContent = score;
+            const savedHigh = localStorage.getItem('birdHighScore') || 0;
+            if (score > savedHigh) localStorage.setItem('birdHighScore', score);
+            document.getElementById('high-score').textContent = Math.max(score, savedHigh);
+            gameOverScreen.style.display = 'flex';
+            cancelAnimationFrame(animationId);
+        }
+
+        function gameLoop() {
+            update(); draw();
+            if (gameRunning) animationId = requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = () => { resizeCanvas(); setupEventListeners(); };
+    </script>
+</body>
+</html>
